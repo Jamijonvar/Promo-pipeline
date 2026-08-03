@@ -209,9 +209,18 @@ def build_blog_prompt(row, template, campaign, matched_artists):
     similar_artist_note = ""
     if matched_artists:
         angle_notes = [similar_artists_reference[a] for a in matched_artists]
+        artist_list = ", ".join(matched_artists)
+        combined_angles = "; ".join(angle_notes)
         similar_artist_note = (
-            f"\nThis outlet has covered artists similar to this campaign before "
-            f"({', '.join(matched_artists)}). Angle guidance: {'; '.join(angle_notes)}."
+            f"\nThis outlet has covered artists similar to this campaign before: {artist_list}. "
+            f"Angle guidance per artist: {combined_angles}. "
+            f"IMPORTANT: if you reference more than one of these artists, do NOT list them "
+            f"mechanically one-by-one (e.g. 'similar to X because of A, similar to Y because "
+            f"of B'). Instead, synthesize the shared qualities into a single natural sentence "
+            f"that names the artists together and blends their angles into one description -- "
+            f"for example: 'similar to {artist_list.split(', ')[0]} and {artist_list.split(', ')[-1]} "
+            f"for its [combined quality from the angles above]'. Only mention artists whose angle "
+            f"actually fits naturally; don't force in every name if it reads awkwardly."
         )
 
     submission_method = str(row.get("Submission Method", "")).lower()
