@@ -216,3 +216,18 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# --- This project's credentials ---
+# Google/Gmail/Sheets API
+credentials.json
+token.json
+token.pickle
+client_secret*.json
+service_account*.json
+
+# Anthropic API key if stored in a file
+anthropic_key.txt
+api_key.txt
+
+# --- Local data ---
+logs/
