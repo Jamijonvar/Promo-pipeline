@@ -85,7 +85,7 @@ DRAFT_DELAY_SECONDS = 1.5
 # variable, save, and run. (A CLI argument, if given, still overrides this.)
 
 #_____________VVVVV UPDATE THIS FILE FOR EACH NEW RELEASE!!!!!VVVVVVV______________________
-CAMPAIGN_CONFIG_PATH = "JSON/nicolas-cage.json" 
+CAMPAIGN_CONFIG_PATH = "json/nicolas-cage.json" 
 
 REQUIRED_CONFIG_KEYS = ["title", "artist", "genre", "subgenre", "link"]
 
@@ -159,7 +159,7 @@ def _contains(haystack, needle):
 def check_blog_eligibility(row, campaign):
     """
     Runs the full matching pipeline for a single Blogs-tab row.
-    `campaign` is the dict loaded from the campaign config JSON.
+    `campaign` is the dict loaded from the campaign config json.
     Returns a dict: {eligible: bool, reason: str, matched_artists: list}
     """
     genre_field = row.get("Genre", "")
@@ -378,7 +378,7 @@ def run(dry_run=True, config_path=None):
 
 if __name__ == "__main__":
     # Optional: pass a specific campaign config file as the first argument,
-    # e.g. `python3 draft_pitches.py JSON/song2.json`, to override the
+    # e.g. `python3 draft_pitches.py json/song2.json`, to override the
     # CAMPAIGN_CONFIG_PATH variable above for just this run.
     # If omitted, uses whatever CAMPAIGN_CONFIG_PATH is currently set to.
     cli_config_path = sys.argv[1] if len(sys.argv) > 1 else None
