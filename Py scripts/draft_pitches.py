@@ -57,7 +57,7 @@ from anthropic import Anthropic
 
 # UPDATE THIS once the xlsx is converted to a live Google Sheet -- the
 # converted file gets a NEW id, different from the original xlsx's id.
-SHEET_ID = "REPLACE_ME_WITH_CONVERTED_SHEET_ID"
+SHEET_ID = "1zQTh1KvorgbCykJ5NhxBdRaiUE987qjlXK8q1VvyamA"
 
 SHEET_CREDENTIALS_PATH = os.path.expanduser("~/promo-pipeline/sheet_credentials.json")
 SCOPES = ["https://www.googleapis.com/auth/spreadsheets"]
@@ -76,15 +76,23 @@ DRAFT_DELAY_SECONDS = 1.5
 # whatever path it's given.
 #
 # Usage:
-#   python3 draft_pitches.py                      -> looks for ./campaign_config.json
-#   python3 draft_pitches.py /path/to/song2.json  -> uses that file instead
+#   python3 draft_pitches.py                      -> uses CAMPAIGN_CONFIG_PATH above
+#   python3 draft_pitches.py /path/to/song2.json  -> overrides it for this run only
+
+# *** THE ONE LINE TO CHANGE FOR EACH NEW RELEASE ***
+# Set this to the path of that song's campaign config JSON. Everything else
+# in the script stays untouched between releases -- just edit this one
+# variable, save, and run. (A CLI argument, if given, still overrides this.)
+
+#_____________VVVVV UPDATE THIS FILE FOR EACH NEW RELEASE!!!!!VVVVVVV______________________
+CAMPAIGN_CONFIG_PATH = "JSON/nicolas-cage.json" 
 
 REQUIRED_CONFIG_KEYS = ["title", "artist", "genre", "subgenre", "link"]
 
 
 def load_campaign_config(path=None):
     if path is None:
-        path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "campaign_config.json")
+        path = CAMPAIGN_CONFIG_PATH
 
     if not os.path.exists(path):
         raise FileNotFoundError(
@@ -370,8 +378,9 @@ def run(dry_run=True, config_path=None):
 
 if __name__ == "__main__":
     # Optional: pass a specific campaign config file as the first argument,
-    # e.g. `python3 draft_pitches.py campaigns/song2.json`
-    # If omitted, looks for campaign_config.json next to this script.
+    # e.g. `python3 draft_pitches.py JSON/song2.json`, to override the
+    # CAMPAIGN_CONFIG_PATH variable above for just this run.
+    # If omitted, uses whatever CAMPAIGN_CONFIG_PATH is currently set to.
     cli_config_path = sys.argv[1] if len(sys.argv) > 1 else None
 
     # Flip to False once you've confirmed the dry run output looks right.
