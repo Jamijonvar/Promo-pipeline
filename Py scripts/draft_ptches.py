@@ -44,6 +44,8 @@ Setup:
 """
 
 import os
+import sys
+import json
 import time
 import datetime
 
@@ -66,31 +68,42 @@ CLAUDE_MAX_TOKENS = 400
 # Between-call delay, mainly relevant once this scales past a handful of rows
 DRAFT_DELAY_SECONDS = 1.5
 
-# --- Per-campaign config: fill this in fresh for each song/song ------------
-# You said you'd rather hand-feed this per song than have the script try to
-# infer it -- this is that hand-fed spec.
+# --- Per-campaign config: loaded from an external file, NOT hardcoded ------
+# This is the whole point of the plug-and-play design: this script never
+# changes between releases. What changes is which config file you point it
+# at. Cowork (or you by hand) writes a fresh JSON file per song using
+# campaign_config.example.json as the template, and this script just reads
+# whatever path it's given.
+#
+# Usage:
+#   python3 draft_pitches.py                      -> looks for ./campaign_config.json
+#   python3 draft_pitches.py /path/to/song2.json  -> uses that file instead
 
-SONG_FACTS = {
-    "title": "REPLACE_ME",
-    "artist": "REPLACE_ME",
-    "genre": "Trap Metal",       # primary genre to match against the Genre column
-    "subgenre": "Lyrical Hip Hop",  # fallback match against the Subgenre column
-    "bpm": "144-150",
-    "key": "C# minor",
-    "mood": "high energy, aggressive",
-    "link": "REPLACE_ME",  # Spotify/SoundCloud/YouTube link
-}
+REQUIRED_CONFIG_KEYS = ["title", "artist", "genre", "subgenre", "link"]
 
-# Manually maintained. Keys are artist names as YOU'D expect them to appear
-# in a blog's "Notable Artists Covered" cell (matching is case-insensitive
-# substring, so partial names work fine, e.g. "Ghostemane" matches
-# "Ghostemane, City Morgue"). Values are the short angle/note you want
-# folded into the pitch if that outlet has covered that artist before.
-SIMILAR_ARTISTS_REFERENCE = {
-    "Ghostemane": "lean into the horrorcore/trap-metal lineage angle",
-    "City Morgue": "lean into the aggressive, mosh-oriented trap-metal angle",
-    # add more as you build this out per campaign
-}
+
+def load_campaign_config(path=None):
+    if path is None:
+        path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "campaign_config.json")
+
+    if not os.path.exists(path):
+        raise FileNotFoundError(
+            f"No campaign config found at '{path}'. Copy "
+            f"campaign_config.example.json, fill it in for this release, "
+            f"and save it there (or pass a path as the first CLI argument)."
+        )
+
+    with open(path, "r") as f:
+        config = json.load(f)
+
+    missing = [k for k in REQUIRED_CONFIG_KEYS if not config.get(k) or config[k] == "REPLACE_ME"]
+    if missing:
+        raise ValueError(
+            f"Campaign config at '{path}' is missing or has placeholder "
+            f"values for: {', '.join(missing)}. Fill these in before running."
+        )
+
+    return config
 
 ANTI_FABRICATION_RULE = (
     "Only use facts explicitly provided to you below. Never invent or imply "
@@ -138,6 +151,7 @@ def _contains(haystack, needle):
 def check_blog_eligibility(row, campaign):
     """
     Runs the full matching pipeline for a single Blogs-tab row.
+    `campaign` is the dict loaded from the campaign config JSON.
     Returns a dict: {eligible: bool, reason: str, matched_artists: list}
     """
     genre_field = row.get("Genre", "")
@@ -145,6 +159,8 @@ def check_blog_eligibility(row, campaign):
     outreach_status = str(row.get("Outreach Status", "")).lower()
     contact_status = str(row.get("Contact Status", "")).lower()
     notable_artists = row.get("Notable Artists Covered", "")
+
+    similar_artists_reference = campaign.get("similar_artists_reference", {})
 
     # Step 1: genre match
     genre_hit = _contains(genre_field, campaign["genre"])
@@ -167,7 +183,7 @@ def check_blog_eligibility(row, campaign):
 
     # Step 5 (soft): similar-artist reference lookup -- never disqualifies
     matched_artists = [
-        name for name in SIMILAR_ARTISTS_REFERENCE
+        name for name in similar_artists_reference
         if _contains(notable_artists, name)
     ]
 
@@ -189,9 +205,10 @@ def build_blog_prompt(row, template, campaign, matched_artists):
 
     facts_block = "\n".join(f"- {k}: {v}" for k, v in campaign.items())
 
+    similar_artists_reference = campaign.get("similar_artists_reference", {})
     similar_artist_note = ""
     if matched_artists:
-        angle_notes = [SIMILAR_ARTISTS_REFERENCE[a] for a in matched_artists]
+        angle_notes = [similar_artists_reference[a] for a in matched_artists]
         similar_artist_note = (
             f"\nThis outlet has covered artists similar to this campaign before "
             f"({', '.join(matched_artists)}). Angle guidance: {'; '.join(angle_notes)}."
@@ -269,7 +286,10 @@ def append_to_queue(sheet, target_type, target_name, draft_text, notes=""):
     queue_ws.append_row([today, "email", target_name, draft_text, "pending", notes])
 
 
-def run(dry_run=True):
+def run(dry_run=True, config_path=None):
+    campaign = load_campaign_config(config_path)
+    print(f"[config] Loaded campaign: {campaign.get('artist')} - {campaign.get('title')}")
+
     sheet, claude = get_clients()
     templates = load_templates(sheet)
 
@@ -285,7 +305,7 @@ def run(dry_run=True):
     else:
         for row in blogs:
             target_name = row.get("Blog/Publication Name", "Unknown")
-            check = check_blog_eligibility(row, SONG_FACTS)
+            check = check_blog_eligibility(row, campaign)
 
             if not check["eligible"]:
                 if dry_run:
@@ -301,7 +321,7 @@ def run(dry_run=True):
                 continue
 
             try:
-                prompt = build_blog_prompt(row, blog_template, SONG_FACTS, check["matched_artists"])
+                prompt = build_blog_prompt(row, blog_template, campaign, check["matched_artists"])
                 draft_text = draft_pitch(claude, prompt)
                 append_to_queue(sheet, "blog", target_name, draft_text, notes=note)
                 print(f"[ok] Drafted + queued blog: {target_name}")
@@ -327,7 +347,7 @@ def run(dry_run=True):
                 continue
 
             try:
-                prompt = build_curator_prompt(row, curator_template, SONG_FACTS)
+                prompt = build_curator_prompt(row, curator_template, campaign)
                 draft_text = draft_pitch(claude, prompt)
                 append_to_queue(sheet, "curator", target_name, draft_text)
                 print(f"[ok] Drafted + queued curator: {target_name}")
@@ -340,8 +360,13 @@ def run(dry_run=True):
 
 
 if __name__ == "__main__":
+    # Optional: pass a specific campaign config file as the first argument,
+    # e.g. `python3 draft_pitches.py campaigns/song2.json`
+    # If omitted, looks for campaign_config.json next to this script.
+    cli_config_path = sys.argv[1] if len(sys.argv) > 1 else None
+
     # Flip to False once you've confirmed the dry run output looks right.
     # Dry run does NOT call Claude and does NOT write anything -- it only
     # prints eligibility decisions row by row, so you can sanity-check the
     # genre/subgenre/outreach/contact-status logic before spending any API calls.
-    run(dry_run=True)
+    run(dry_run=True, config_path=cli_config_path)

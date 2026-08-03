@@ -1,0 +1,15 @@
+{
+  "title": "REPLACE_ME",
+  "artist": "REPLACE_ME",
+  "genre": "Trap Metal",
+  "subgenre": "Lyrical Hip Hop",
+  "bpm": "144-150",
+  "key": "C# minor",
+  "mood": "high energy, aggressive",
+  "link": "REPLACE_ME",
+
+  "similar_artists_reference": {
+    "Ghostemane": "lean into the horrorcore/trap-metal lineage angle",
+    "City Morgue": "lean into the aggressive, mosh-oriented trap-metal angle"
+  }
+}
