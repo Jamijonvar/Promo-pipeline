@@ -59,7 +59,8 @@ from anthropic import Anthropic
 # converted file gets a NEW id, different from the original xlsx's id.
 SHEET_ID = "1zQTh1KvorgbCykJ5NhxBdRaiUE987qjlXK8q1VvyamA"
 
-SHEET_CREDENTIALS_PATH = os.path.expanduser("~/promo-pipeline/sheet_credentials.json")
+SHEET_CREDENTIALS_PATH = os.path.expanduser("~/Documents/promo pipeline (non git)/promo-pipeline-504015-9a37b1dc173a.json")
+
 SCOPES = ["https://www.googleapis.com/auth/spreadsheets"]
 
 CLAUDE_MODEL = "claude-sonnet-4-6"
