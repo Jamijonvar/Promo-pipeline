@@ -231,3 +231,6 @@ api_key.txt
 
 # --- Local data ---
 logs/
+
+# Drafted pitch batches (real contact emails + copy, not code -- no need for commit history)
+outputs/
