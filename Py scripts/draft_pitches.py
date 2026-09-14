@@ -73,11 +73,35 @@ Setup:
     ever been marked sent). Worth nailing down with Jonny before the first
     real send, so this function can be kept in sync with whatever
     convention he actually uses.
+
+--- Sep 2026: tag-based fallback artist matching ---
+    similar_artists_reference entries can now be EITHER a flat string
+    (old format, e.g. "Ghostemane": "lean into...") OR a
+    {"angle": "...", "tags": [...]} dict (new format) -- see
+    _artist_entry_angle()/_artist_entry_tags(). "tags" is a free-form list
+    of strings the campaign author chooses (typically genre/subgenre
+    words), used only to bias which 2 fallback artists get picked for a
+    row with no outlet-specific match: names whose tags overlap the
+    specific campaign terms that made THAT row eligible (matched_terms,
+    from check_blog_eligibility) are preferred over a blind pick from the
+    whole reference list. See fill_template()'s docstring for the full
+    mechanics.
+
+    IMPORTANT constraint (per Jonny, Sep 2026): this script must stay
+    100% genre-agnostic and campaign-agnostic so the same code works for
+    any future song/genre. There is no genre name, subgenre name, artist
+    name, or tag string hardcoded anywhere in this file -- ALL of that
+    content lives only in the campaign JSON (json/<campaign>.json). Any
+    future edit to this file should keep it that way: new logic here
+    should only ever be generic mechanisms that operate on whatever
+    values the campaign JSON happens to contain, never on specific
+    genre/artist vocabulary baked into the .py itself.
 """
 
 import os
 import sys
 import json
+import random
 import pathlib
 import datetime
 
@@ -219,7 +243,7 @@ def _status_means_already_contacted(status_text):
 def check_blog_eligibility(row, campaign):
     """
     Matching pipeline for a single Publications-tab row.
-    Returns {eligible, reason, matched_artists}.
+    Returns {eligible, reason, matched_artists, matched_terms}.
 
     Sep 2026: broadened from the original version, which only checked
     campaign genre against the row's Genre column, falling back to
@@ -238,6 +262,15 @@ def check_blog_eligibility(row, campaign):
     "subgenre": ["Lyrical Hip Hop", "Trap Metal", "Hip Hop"] to match on
     any of several possible tags. A row is eligible if ANY campaign
     genre/subgenre term is found in ANY sheet Genre/Subgenre field.
+
+    Sep 2026: also returns matched_terms -- whichever specific campaign
+    genre/subgenre terms actually hit for THIS row (a subset of
+    campaign_terms, not just a bool). This is generic by construction --
+    it's just "which of the campaign's own terms matched," so it carries
+    no genre-specific knowledge itself. fill_template() uses it to bias
+    fallback similar-artist selection toward artists tagged with the same
+    terms, but all the actual tag vocabulary lives in the campaign JSON's
+    similar_artists_reference, never in this function.
     """
     genre_field = row.get("Genre", "")
     subgenre_field = row.get("Subgenre", "")
@@ -252,21 +285,31 @@ def check_blog_eligibility(row, campaign):
     subgenre_field_hit = _any_contains(subgenre_field, campaign_terms)
 
     if not genre_field_hit and not subgenre_field_hit:
-        return {"eligible": False, "reason": "no genre/subgenre match", "matched_artists": []}
+        return {"eligible": False, "reason": "no genre/subgenre match", "matched_artists": [], "matched_terms": []}
 
     if _status_means_already_contacted(outreach_status):
-        return {"eligible": False, "reason": "already contacted", "matched_artists": []}
+        return {"eligible": False, "reason": "already contacted", "matched_artists": [], "matched_terms": []}
 
     if "defunct" in contact_status:
-        return {"eligible": False, "reason": "contact defunct", "matched_artists": []}
+        return {"eligible": False, "reason": "contact defunct", "matched_artists": [], "matched_terms": []}
 
     matched_artists = [
         name for name in similar_artists_reference
         if _contains(notable_artists, name)
     ]
 
+    matched_terms = [
+        term for term in campaign_terms
+        if _contains(genre_field, term) or _contains(subgenre_field, term)
+    ]
+
     matched_via = "genre column" if genre_field_hit else "subgenre column"
-    return {"eligible": True, "reason": f"matched via {matched_via}", "matched_artists": matched_artists}
+    return {
+        "eligible": True,
+        "reason": f"matched via {matched_via}",
+        "matched_artists": matched_artists,
+        "matched_terms": matched_terms,
+    }
 
 
 def load_master_template():
@@ -277,6 +320,55 @@ def load_master_template():
         )
     with open(TEMPLATE_PATH, "r") as f:
         return f.read()
+
+
+def _natural_join(items):
+    """Join a list of strings as natural English: "X", "X and Y", or
+    "X, Y, and Z". Used for both the subgenre suffix and similar-artist
+    lists so multi-item lists never fall back to a raw slash/comma dump."""
+    items = [str(i) for i in items if str(i).strip()]
+    if not items:
+        return ""
+    if len(items) == 1:
+        return items[0]
+    if len(items) == 2:
+        return f"{items[0]} and {items[1]}"
+    return ", ".join(items[:-1]) + f", and {items[-1]}"
+
+
+def _artist_entry_angle(entry):
+    """
+    Return the pitch-angle text for one similar_artists_reference entry.
+    An entry can be either the old flat-string format ("lean into...") or
+    the newer {"angle": "...", "tags": [...]} dict format that adds
+    tag-based fallback matching (see fill_template() below). Both formats
+    -- and all the artist/genre content inside them -- are defined
+    entirely in the campaign JSON; this just knows how to read either
+    shape generically, with no campaign-specific knowledge of its own.
+    """
+    if isinstance(entry, dict):
+        return entry.get("angle", "")
+    return entry
+
+
+def _artist_entry_tags(entry):
+    """
+    Return the list of tags for one similar_artists_reference entry, or
+    [] if it's the old flat-string format or simply has no tags. Tags are
+    whatever strings the campaign JSON puts there (typically its own
+    genre/subgenre vocabulary) -- this function carries no tag vocabulary
+    of its own.
+    """
+    if isinstance(entry, dict):
+        return _as_list(entry.get("tags"))
+    return []
+
+
+def _lists_overlap(list_a, list_b):
+    """True if two lists of strings share any element, case-insensitively."""
+    set_a = {str(v).strip().lower() for v in list_a if str(v).strip()}
+    set_b = {str(v).strip().lower() for v in list_b if str(v).strip()}
+    return bool(set_a & set_b)
 
 
 def _fill_conditional_blocks(template, flags):
@@ -299,7 +391,7 @@ def _fill_conditional_blocks(template, flags):
     return template
 
 
-def fill_template(template, row, campaign, matched_artists):
+def fill_template(template, row, campaign, matched_artists, matched_terms=None):
     """
     Purely mechanical fill -- no judgment, no rewriting. When multiple
     similar artists match, this deliberately produces a raw, list-like
@@ -311,41 +403,91 @@ def fill_template(template, row, campaign, matched_artists):
       actually mentioned one of our reference artists -> confident framing
       ("shares qualities with X, who they've covered before").
     - FALLBACK: no outlet-specific match, but we still want a genre-level
-      comparison point -> softer framing ("in the vein of X and Y"),
-      using up to the first 2 names from the reference list. This is a
-      deterministic rule (always the same 2 names, same order), not a
-      judgment call, so it lives here in Python rather than being left to
-      Claude at cleanup time.
+      comparison point -> softer framing ("in the vein of X and Y").
+
+      Sep 2026: previously always used the first 2 names from the
+      reference list, in file order, for every row with no verified
+      match. Against a broad campaign genre (most rows end up in this
+      fallback path -- e.g. 63 of 65 for a "Hip Hop" campaign), that
+      meant near-identical wording sent to wildly different outlets
+      (metal press, major hip-hop platforms, multi-genre blogs alike).
+      Now picks 2 names via a hash of the row's own blog name, so the
+      pair varies across the reference list -- deterministic and
+      reproducible (the same blog always gets the same pair on repeat
+      runs of the same campaign) without being identical across the
+      whole batch.
+
+      Sep 2026: on top of that rotation, fallback selection now prefers
+      names whose own "tags" (see _artist_entry_tags()) overlap with
+      matched_terms -- the specific campaign genre/subgenre terms that
+      made THIS row eligible (see check_blog_eligibility()). E.g. a row
+      that matched because its Subgenre cell contained "Trap Metal" will
+      preferentially get a fallback artist tagged "Trap Metal" over one
+      tagged only "Lyrical Hip Hop", instead of picking from the whole
+      reference list with no regard for fit. This is still a mechanical,
+      generic rule: it only compares whatever terms the campaign's own
+      "genre"/"subgenre" JSON produced against whatever "tags" that same
+      campaign's similar_artists_reference entries define -- it doesn't
+      hardcode any genre, subgenre, or artist name itself, so the same
+      code works unchanged for any campaign JSON. If no reference artist's
+      tags overlap matched_terms (including campaigns using the old
+      flat-string format, which has no tags at all), it falls back to
+      rotating across the full reference list exactly as before.
     """
     similar_artists_reference = campaign.get("similar_artists_reference", {})
+    matched_terms = matched_terms or []
 
     # "genre" and "subgenre" may each be a single string or a list of
     # strings (see _as_list()) -- always join to plain text here so the
     # filled email never shows a raw Python list.
-    genre_display = "/".join(_as_list(campaign.get("genre")))
+    genre_display = _natural_join(_as_list(campaign.get("genre")))
     subgenre_list = _as_list(campaign.get("subgenre"))
-    subgenre_suffix = f" with a {'/'.join(subgenre_list)} edge" if subgenre_list else ""
+    subgenre_suffix = f" with a {_natural_join(subgenre_list)} edge" if subgenre_list else ""
 
     similar_artists_list = ""
     fallback_artists_list = ""
 
     if matched_artists:
-        parts = [f"{name} ({similar_artists_reference[name]})" for name in matched_artists]
-        if len(parts) == 1:
-            similar_artists_list = parts[0]
-        else:
-            similar_artists_list = ", ".join(parts[:-1]) + " and " + parts[-1]
+        parts = [
+            f"{name} ({_artist_entry_angle(similar_artists_reference[name])})"
+            for name in matched_artists
+        ]
+        similar_artists_list = _natural_join(parts)
     else:
-        fallback_names = list(similar_artists_reference.keys())[:2]
-        if fallback_names:
-            fallback_artists_list = " and ".join(fallback_names)
+        reference_names = list(similar_artists_reference.keys())
+        if reference_names:
+            # Prefer names whose own tags overlap the terms that made this
+            # row eligible (see docstring above); fall back to the full
+            # reference list if none overlap (or none have tags at all).
+            tag_matched_names = [
+                name for name in reference_names
+                if _lists_overlap(_artist_entry_tags(similar_artists_reference[name]), matched_terms)
+            ]
+            candidate_names = tag_matched_names if tag_matched_names else reference_names
 
-    submission_method = str(row.get("Submission Method", "")).lower()
+            # Deterministic per-blog rotation (see docstring above) --
+            # seeded on the blog name, NOT on randomness, so results are
+            # stable across repeat runs of the same campaign.
+            blog_name_seed = str(row.get("Blogs", "")).strip().lower()
+            rng = random.Random(blog_name_seed)
+            pick_count = min(2, len(candidate_names))
+            fallback_names = rng.sample(candidate_names, pick_count)
+            fallback_artists_list = _natural_join(fallback_names)
+
+    submission_method_raw = str(row.get("Submission Method", "")).strip()
+    submission_method = submission_method_raw.lower()
     contact_info = row.get("Contact Info", "")
-    if "form" in submission_method or "portal" in submission_method:
-        submission_cta = f"Please submit via their form/portal: {contact_info}"
-    else:
+    # Sep 2026: previously only "form"/"portal" triggered the submit-via
+    # CTA, so a named third-party platform (e.g. "Groover") fell through
+    # to "reply directly to this email" -- wrong, since you can't reach
+    # Groover by replying to an email. Flipped to a denylist: anything
+    # that ISN'T recognizably "just email me" gets the submit-via CTA,
+    # so an unanticipated platform name is handled correctly by default.
+    EMAIL_REPLY_METHODS = ("email", "unverified", "")
+    if submission_method in EMAIL_REPLY_METHODS:
         submission_cta = "Feel free to reply directly to this email."
+    else:
+        submission_cta = f"Please submit via {submission_method_raw}: {contact_info}"
 
     filled = _fill_conditional_blocks(template, {
         "SIMILAR_VERIFIED": bool(matched_artists),
@@ -389,13 +531,16 @@ def run(config_path=None):
             skipped_count += 1
             continue
 
-        filled_email = fill_template(template, row, campaign, check["matched_artists"])
+        filled_email = fill_template(
+            template, row, campaign, check["matched_artists"], check["matched_terms"]
+        )
 
         results.append({
             "target_name": target_name,
             "target_type": "blog",
             "matched_via": check["reason"],
             "matched_artists": check["matched_artists"],
+            "matched_terms": check["matched_terms"],
             "genre": row.get("Genre", ""),
             "subgenre": row.get("Subgenre", ""),
             "submission_method": row.get("Submission Method", ""),
