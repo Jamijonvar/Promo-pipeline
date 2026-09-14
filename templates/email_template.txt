@@ -1,0 +1,14 @@
+Subject: New music for {{BLOG_NAME}}: {{ARTIST}} — {{TITLE}}
+
+Hi {{BLOG_NAME}} team,
+
+{{#IF_SIMILAR_VERIFIED}}"{{TITLE}}" shares real ground with {{SIMILAR_ARTISTS_LIST}}, so I thought it might be a fit for what you cover.{{/IF_SIMILAR_VERIFIED}}{{#IF_SIMILAR_FALLBACK}}"{{TITLE}}" sits in the vein of {{FALLBACK_ARTISTS_LIST}}, so I thought it might be a fit for what you cover.{{/IF_SIMILAR_FALLBACK}}
+
+It's {{GENRE}}{{SUBGENRE_SUFFIX}} — {{MOOD}}.
+
+Listen here: {{SONG_LINK}}
+
+{{SUBMISSION_CTA}}
+
+Best,
+{{ARTIST}}

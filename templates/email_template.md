@@ -1,74 +1,77 @@
-# Blog Pitch Email Template
+# Blog Pitch Email — Cowork Humanize Style Guide
 
-Reference template for the eventual drafting step in `draft_pitches.py`. Not wired into the code yet — this is the content spec to build the prompt/output around later.
+**Role, as of the Sep 2026 cleanup:** `draft_pitches.py` mechanically fills
+`templates/email_template.txt` for every eligible row using plain
+`{{TOKEN}}` substitution — genre, mood, link, submission CTA, subject
+line, sign-off, etc. are all already correct and shouldn't be touched.
+The one spot the template can't handle gracefully is the similar-artist
+line: when more than one reference artist matches, the fill produces a
+raw "X (angle), Y (angle) and Z (angle)" list. **This doc is the style
+guide Cowork follows when it reviews a batch from `outputs/pending_emails.json`
+and smooths that spot (and anything else that reads mechanically) into
+natural prose — it is not a spec for drafting each email from scratch.**
+Everything outside the similar-artist sentence should be left as the
+script wrote it unless something is actually wrong.
 
 ## Subject line
 
-Fixed format, no drafting needed:
+Already generated correctly by the script — leave it alone:
 
 ```
 New music for {blog_name}: {artist} — {title}
 ```
 
-## Body structure
+## Body structure (as filled by the script)
 
-1. **Greeting** — generic, no invented editor name (we don't reliably have one per row):
-   `Hi {blog_name} team,`
+1. **Greeting** — generic, no invented editor name: `Hi {blog_name} team,`
+2. **Hook / fit line** — already filled. This is the one line to reshape:
+   turn the raw "X (angle), Y (angle) and Z (angle)" list into one natural
+   sentence that blends the angles instead of listing them. Never drop a
+   real match, never add an artist that wasn't in the matched list.
+3. **Core pitch** — already filled from campaign facts (genre/subgenre/mood).
+   Leave as-is unless it reads broken.
+4. **Link** — the track link, on its own line. Never touch.
+5. **Call to action / sign-off** — already filled based on submission
+   method (reply directly vs. form/portal link). Leave as-is.
 
-2. **Hook / fit line** — one sentence tying the track's genre/subgenre to what this blog covers. If a genuine similar-artist match was found (via `similar_artists_reference`), work it in here — blended naturally if more than one, never a mechanical list.
+## Rules for the humanize pass
 
-3. **Core pitch** — 2–3 sentences: artist name, track title, genre/subgenre/mood, one distinguishing creative detail. Only facts present in the campaign JSON — nothing invented.
+- Only reshape the similar-artist sentence (and fix anything that's
+  actually broken — leftover `{{TOKENS}}`, doubled punctuation, etc.).
+  Don't rewrite sentences that already read fine.
+- Never invent streaming numbers, chart positions, press mentions,
+  follower counts, or any momentum claim not explicitly in the campaign
+  facts or the matched-artist data.
+- Never introduce a similar-artist name that wasn't in `matched_artists`
+  for that row.
+- No hype-speak, no exclamation-point stacking, no "just dropped" framing.
+- Keep the body under ~150 words after your edits.
 
-4. **Link** — the track link, on its own line.
+## Worked example (real output from the script, Nicolas Cage campaign)
 
-5. **Call to action / sign-off** — plain, low-pressure close. Reply-to-this-email framing (this template is email-only rows; form/portal/social rows are filtered out upstream).
+**Before (mechanical fill, 3 similar-artist matches — the expected rough spot):**
 
-6. **Sign-off**
-   ```
-   Best,
-   {artist}
-   ```
+> "Nicolas Cage" shares real ground with Ghostemane (lean into the
+> trap-metal lineage angle. Mention the screamed chorus), City Morgue
+> (lean into the aggressive, mosh-oriented trap-metal angle. Mention the
+> screamed chorus) and Suicide Boys (lean into the gritty underground/aggressive
+> hip-hop angle), so I thought it might be a fit for what you cover.
 
-## Rules baked in
+**After (humanized by Cowork — same facts, blended into prose):**
 
-- Body under ~150 words.
-- Never invent streaming numbers, chart positions, press mentions, follower counts, or any momentum claim not explicitly given in the campaign facts.
-- No "just dropped" / brand-new-release framing — reference the track naturally instead.
-- Similar-artist references only when a real match exists; blend multiple into one natural sentence rather than listing them.
-- No hype-speak, no exclamation-point stacking.
+> "Nicolas Cage" sits right in your lane — it's got the mosh-oriented,
+> screamed-chorus energy of Ghostemane and City Morgue, with verses that
+> lean into the gritty, technical flow of Suicide Boys.
 
-## Worked example (illustrative — not a real submission)
+Everything else in that email (subject, core pitch, link, CTA, sign-off)
+stays exactly as the script filled it.
 
-Using the current campaign (`json/nicolas-cage.json`) and a hypothetical email-contact blog:
+## Token reference (for maintaining `templates/email_template.txt`)
 
-**Subject:**
-```
-New music for Example Trap Metal Blog: Jonny Wolf — Nicolas Cage
-```
-
-**Body:**
-```
-Hi Example Trap Metal Blog team,
-
-Been following your coverage of the trap-metal/lyrical-hip-hop crossover space and
-thought "Nicolas Cage" would be a fit — it sits in that same lineage as Ghostemane
-and City Morgue, aggressive and mosh-oriented with a screamed chorus, but the verses
-lean into a technical, pocket-heavy flow closer to Tech N9ne or MF DOOM.
-
-Track: "Nicolas Cage" — Jonny Wolf
-Genre/mood: Trap Metal / Lyrical Hip Hop, high energy, aggressive, 144–150 BPM, C# minor
-
-Listen: https://open.spotify.com/track/7aH78cimt3uZbviBcpwBTb
-
-Would love to know what you think — happy to send anything else you need.
-
-Best,
-Jonny Wolf
-```
-
-## Open placeholders for the eventual code
-
-- `{blog_name}` — from the `Blogs` column
-- `{artist}`, `{title}`, `{link}` — from the campaign JSON
-- Hook sentence — drafted per row (genre/subgenre fit + optional similar-artist blend)
-- Core pitch sentence(s) — drafted per row, campaign-facts only
+| Token | Filled from |
+|---|---|
+| `{{TITLE}}` / `{{ARTIST}}` / `{{GENRE}}` / `{{SUBGENRE_SUFFIX}}` / `{{MOOD}}` / `{{SONG_LINK}}` | campaign config JSON |
+| `{{BLOG_NAME}}` | the row's "Blog/Publication Name" |
+| `{{SIMILAR_ARTISTS_LIST}}` | verified match(es) — used inside `{{#IF_SIMILAR_VERIFIED}}...{{/IF_SIMILAR_VERIFIED}}` |
+| `{{FALLBACK_ARTISTS_LIST}}` | up to 2 reference artists, used when there's no outlet-specific match, inside `{{#IF_SIMILAR_FALLBACK}}...{{/IF_SIMILAR_FALLBACK}}` |
+| `{{SUBMISSION_CTA}}` | derived from "Submission Method" (form/portal link vs. reply-direct) |

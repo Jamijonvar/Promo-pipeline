@@ -13,25 +13,49 @@ spots the template can't handle gracefully -- most notably when more than
 one similar artist matches, the fill produces a raw "X (angle) and Y
 (angle)" list rather than natural prose. That's expected. A Claude Cowork
 session picks up the output file next, humanizes anything that reads
-mechanically, and handles the actual send after a batch-level go-ahead
-from Jonny. This script's job ends the moment the output file is written.
+mechanically (following templates/email_template.md as its style guide),
+and handles the actual send after a batch-level go-ahead from Jonny. This
+script's job ends the moment the output file is written.
 
 THE LOOP:
   campaign config JSON -> this script -> output JSON (overwritten) -> Cowork -> email
 
 Run this after:
   - Blogs tab is populated with real data, named exactly "Blogs"
-  - email_template.txt exists and has real placeholder content
-  - CAMPAIGN_CONFIG_PATH below points at the right song's config
+  - templates/email_template.txt exists and has real placeholder content
+  - CAMPAIGN_CONFIG_FILENAME below points at the right song's config
 
 Setup:
   pip install gspread google-auth
   Place your Google service account JSON at the path in SHEET_CREDENTIALS_PATH
+
+--- Sep 2026 cleanup notes ---
+  - All in-repo paths (campaign config, master template, output file) are
+    now anchored to the repo root via REPO_ROOT instead of being relative
+    to whatever directory the script happens to be launched from -- it was
+    silently breaking (FileNotFoundError) if run from anywhere but the repo
+    root.
+  - TEMPLATE_PATH now points at templates/email_template.txt (this file
+    didn't exist before -- the script was pointed at a plain "email_template.txt"
+    that was never created, so every run failed immediately). See that file
+    for the actual {{TOKEN}} template consumed by fill_template() below.
+    templates/email_template.md is a *separate* file: a style guide for the
+    Cowork humanize pass, not something this script reads.
+  - OUTPUT_PATH now writes to outputs/ (plural) to match .gitignore, which
+    already excludes "outputs/" -- it was writing to "output/" (singular),
+    so filled pitch batches (real contact info + copy) were NOT actually
+    gitignored.
+  - Fixed a real eligibility bug: the "already contacted" check used to do
+    `"sent" in outreach_status`, which is a substring match -- so a status
+    of "Not Sent" or "Unsent" (both meaning NOT yet contacted) contained
+    "sent" and was wrongly treated as already contacted, silently skipping
+    otherwise-eligible blogs. See _status_means_already_contacted() below.
 """
 
 import os
 import sys
 import json
+import pathlib
 import datetime
 
 import gspread
@@ -46,14 +70,23 @@ SHEET_CREDENTIALS_PATH = os.path.expanduser(
 )
 SCOPES = ["https://www.googleapis.com/auth/spreadsheets"]
 
+# Repo root, regardless of the directory this script is launched from.
+# (This file lives at <repo root>/Py scripts/draft_pitches.py.)
+REPO_ROOT = pathlib.Path(__file__).resolve().parent.parent
+
 # *** THE ONE LINE TO CHANGE FOR EACH NEW RELEASE ***
-CAMPAIGN_CONFIG_PATH = "json/nicolas-cage.json"
+CAMPAIGN_CONFIG_FILENAME = "nicolas-cage.json"
+CAMPAIGN_CONFIG_PATH = REPO_ROOT / "json" / CAMPAIGN_CONFIG_FILENAME
 
-# The master email template -- one file, reused across every campaign
-TEMPLATE_PATH = "email_template.txt"
+# The master email template -- one file, reused across every campaign.
+# Plain {{TOKEN}} / {{#IF_X}}...{{/IF_X}} mechanical fill -- see
+# fill_template() below for the exact tokens it understands.
+TEMPLATE_PATH = REPO_ROOT / "templates" / "email_template.txt"
 
-# Fixed output path -- overwritten every run, not per-campaign
-OUTPUT_PATH = "output/pending_emails.json"
+# Fixed output path -- overwritten every run, not per-campaign.
+# "outputs/" (plural) matches the .gitignore entry -- real contact info
+# and pitch copy should never end up in commit history.
+OUTPUT_PATH = REPO_ROOT / "outputs" / "pending_emails.json"
 
 REQUIRED_CONFIG_KEYS = ["title", "artist", "genre", "subgenre", "link"]
 
@@ -103,6 +136,32 @@ def _contains(haystack, needle):
     return needle.strip().lower() in str(haystack).strip().lower()
 
 
+# Statuses that mean "we have NOT contacted them yet" but that would
+# otherwise false-positive against a naive "sent" substring check (e.g.
+# "Not Sent" and "Unsent" both contain "sent"). Checked before the
+# already-contacted markers below, so these always win.
+_NOT_CONTACTED_OVERRIDES = ("not sent", "unsent", "not contacted", "no contact")
+
+# Substrings that mean "we HAVE already contacted them", once the
+# not-contacted overrides above have been ruled out.
+_ALREADY_CONTACTED_MARKERS = ("already contacted", "contacted", "sent")
+
+
+def _status_means_already_contacted(status_text):
+    """
+    True if this Outreach Status cell indicates we've already reached out
+    (e.g. "Sent", "Already Contacted", "Sent 8/12"). False for anything
+    that means the opposite even though it contains "sent" as a substring
+    -- e.g. "Not Sent", "Unsent", "Not Sent Yet".
+    """
+    status_text = str(status_text or "").strip().lower()
+    if not status_text:
+        return False
+    if any(marker in status_text for marker in _NOT_CONTACTED_OVERRIDES):
+        return False
+    return any(marker in status_text for marker in _ALREADY_CONTACTED_MARKERS)
+
+
 def check_blog_eligibility(row, campaign):
     """
     Matching pipeline for a single Blogs-tab row. Unchanged from the
@@ -111,7 +170,7 @@ def check_blog_eligibility(row, campaign):
     """
     genre_field = row.get("Genre", "")
     subgenre_field = row.get("Subgenre", "")
-    outreach_status = str(row.get("Outreach Status", "")).lower()
+    outreach_status = row.get("Outreach Status", "")
     contact_status = str(row.get("Contact Status", "")).lower()
     notable_artists = row.get("Notable Artists Covered", "")
 
@@ -126,7 +185,7 @@ def check_blog_eligibility(row, campaign):
     if not genre_hit and not subgenre_hit:
         return {"eligible": False, "reason": "no genre/subgenre match", "matched_artists": []}
 
-    if "already contacted" in outreach_status or "sent" in outreach_status:
+    if _status_means_already_contacted(outreach_status):
         return {"eligible": False, "reason": "already contacted", "matched_artists": []}
 
     if "defunct" in contact_status:
@@ -272,7 +331,7 @@ def run(config_path=None):
             "filled_email": filled_email,
         })
 
-    os.makedirs(os.path.dirname(OUTPUT_PATH), exist_ok=True)
+    OUTPUT_PATH.parent.mkdir(parents=True, exist_ok=True)
     output = {
         "generated_at": datetime.datetime.now().isoformat(),
         "campaign": {
