@@ -1,20 +1,25 @@
 {
   "title": "Nicolas Cage",
   "artist": "Jonny Wolf",
-  "genre": "Trap Metal",
-  "subgenre": "Lyrical Hip Hop",
+  "genre": "Hip Hop",
+  "subgenre": [
+  "Trap Metal",
+  "Lyrical Hip Hop",
+  "Alternative Hip Hop"
+  ]
   "bpm": "144-150",
   "key": "C# minor",
   "mood": "high energy, aggressive",
   "link": "https://open.spotify.com/track/7aH78cimt3uZbviBcpwBTb?si=c91c9b5f44ee44c6",
 
   "similar_artists_reference": {
+    "MF DOOM": "lean into the lyrical aspects. This song has flows and pockets like MF DOOM on the verses, but the chorus is aggressive",
     "Ghostemane": "lean into the trap-metal lineage angle. Mention the screamed chorus",
     "City Morgue": "lean into the aggressive, mosh-oriented trap-metal angle. Mention the screamed chorus",
     "Suicide Boys": "lean into the gritty underground/aggressive hip-hop angle",
     "Tech N9ne": "lean into the gritty underground/lyrical hip-hop angle. Mention the technical flow patterns",
     "Zillakami": "lean into the aggressive, mosh-oriented trap-metal angle. Mention the screamed chorus",
-    "Jasiah": "lean into the aggressive, mosh-oriented trap-metal angle. Mention the screamed chorus",
-    "MF DOOM": "lean into the lyrical aspects. This song has flows and pockets like MF DOOM on the verses, but the chorus is aggressive"
+    "Jasiah": "lean into the aggressive, mosh-oriented trap-metal angle. Mention the screamed chorus"
+    
   }
 }

@@ -2,7 +2,7 @@
   "title": "REPLACE_ME",
   "artist": "REPLACE_ME",
   "genre": "Trap Metal",
-  "subgenre": "Lyrical Hip Hop",
+  "subgenre": ["Lyrical Hip Hop", "Trap Metal", "Hip Hop"],
   "bpm": "144-150",
   "key": "C# minor",
   "mood": "high energy, aggressive",

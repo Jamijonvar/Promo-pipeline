@@ -3,7 +3,7 @@ draft_pitches.py
 
 NEW ARCHITECTURE (Aug 2026): this script does matching and mechanical
 template-filling ONLY. It never calls the Claude API and never sends
-anything. It reads the Blogs tab, figures out who's eligible using
+anything. It reads the Publications tab, figures out who's eligible using
 deterministic rules, fills in the master email template with their real
 data, and writes the whole batch to a single output JSON file that gets
 overwritten every run.
@@ -21,7 +21,7 @@ THE LOOP:
   campaign config JSON -> this script -> output JSON (overwritten) -> Cowork -> email
 
 Run this after:
-  - Blogs tab is populated with real data, named exactly "Blogs"
+  - Publications tab is populated with real data, named exactly "Publications"
   - templates/email_template.txt exists and has real placeholder content
   - CAMPAIGN_CONFIG_FILENAME below points at the right song's config
 
@@ -50,6 +50,29 @@ Setup:
     of "Not Sent" or "Unsent" (both meaning NOT yet contacted) contained
     "sent" and was wrongly treated as already contacted, silently skipping
     otherwise-eligible blogs. See _status_means_already_contacted() below.
+
+--- Sep 2026 live-validation notes (run against the real sheet) ---
+  - The tab is actually named "Publications", not "Blogs" -- there is no
+    "Blogs" tab in the sheet at all. Fixed.
+  - The publication-name COLUMN in that tab is header "Blogs" (confusingly
+    -- that's presumably where the old "Blogs"-as-tab-name assumption came
+    from). The code was looking for a "Blog/Publication Name" column that
+    doesn't exist, so target_name and {{BLOG_NAME}} were always falling
+    back to "Unknown"/"there". Fixed.
+  - Every one of the 419 real rows currently has the exact same
+    boilerplate Outreach Status text: "Not yet contacted. If emailed
+    before for this song, ignore and move to next row." That string
+    contains "contacted" as a substring, so _status_means_already_contacted
+    (the fix above) was STILL wrongly flagging every single row as
+    already-contacted against real data -- a live run would have produced
+    zero eligible pitches. Added "not yet" as a not-contacted override,
+    checked before the "contacted"/"sent" markers, to fix this. This is
+    still just pattern-matching against today's one known boilerplate
+    value -- there's no established convention yet for what a row looks
+    like once it actually HAS been contacted (nothing in the sheet has
+    ever been marked sent). Worth nailing down with Jonny before the first
+    real send, so this function can be kept in sync with whatever
+    convention he actually uses.
 """
 
 import os
@@ -104,7 +127,15 @@ def load_campaign_config(path=None):
     with open(path, "r") as f:
         config = json.load(f)
 
-    missing = [k for k in REQUIRED_CONFIG_KEYS if not config.get(k) or config[k] == "REPLACE_ME"]
+    def _has_placeholder(value):
+        # "genre"/"subgenre" may be a list (see _as_list()) -- catch a
+        # stray "REPLACE_ME" left inside a list too, not just a bare
+        # string value.
+        if isinstance(value, (list, tuple)):
+            return any(v == "REPLACE_ME" for v in value)
+        return value == "REPLACE_ME"
+
+    missing = [k for k in REQUIRED_CONFIG_KEYS if not config.get(k) or _has_placeholder(config.get(k))]
     if missing:
         raise ValueError(
             f"Campaign config at '{path}' is missing or has placeholder "
@@ -136,11 +167,34 @@ def _contains(haystack, needle):
     return needle.strip().lower() in str(haystack).strip().lower()
 
 
+def _as_list(value):
+    """
+    Normalize a campaign config value that may be either a single string
+    or a list of strings into a list of strings. Lets "genre" and
+    "subgenre" in the campaign JSON hold multiple possible tags --
+    e.g. "subgenre": ["Lyrical Hip Hop", "Trap Metal", "Hip Hop"] -- while
+    staying backward-compatible with older configs that just use a single
+    string. Blank/empty entries are dropped.
+    """
+    if value is None:
+        return []
+    if isinstance(value, (list, tuple)):
+        return [str(v).strip() for v in value if str(v).strip()]
+    value = str(value).strip()
+    return [value] if value else []
+
+
+def _any_contains(haystack, needles):
+    """True if haystack contains ANY of the given needle strings."""
+    return any(_contains(haystack, needle) for needle in needles)
+
+
 # Statuses that mean "we have NOT contacted them yet" but that would
-# otherwise false-positive against a naive "sent" substring check (e.g.
-# "Not Sent" and "Unsent" both contain "sent"). Checked before the
-# already-contacted markers below, so these always win.
-_NOT_CONTACTED_OVERRIDES = ("not sent", "unsent", "not contacted", "no contact")
+# otherwise false-positive against a naive "sent"/"contacted" substring
+# check (e.g. "Not Sent" and "Unsent" both contain "sent"; the sheet's
+# real boilerplate "Not yet contacted..." contains "contacted"). Checked
+# before the already-contacted markers below, so these always win.
+_NOT_CONTACTED_OVERRIDES = ("not sent", "unsent", "not contacted", "not yet", "no contact")
 
 # Substrings that mean "we HAVE already contacted them", once the
 # not-contacted overrides above have been ruled out.
@@ -164,9 +218,26 @@ def _status_means_already_contacted(status_text):
 
 def check_blog_eligibility(row, campaign):
     """
-    Matching pipeline for a single Blogs-tab row. Unchanged from the
-    previous version -- this logic was already tested and works.
+    Matching pipeline for a single Publications-tab row.
     Returns {eligible, reason, matched_artists}.
+
+    Sep 2026: broadened from the original version, which only checked
+    campaign genre against the row's Genre column, falling back to
+    campaign subgenre against the row's Subgenre column ONLY if genre
+    didn't already hit. Against the real sheet, specific tags like "Trap
+    Metal" often live inside the Subgenre column as one of several
+    semicolon-separated values (e.g. "Nu Metal; Trap Metal crossover;
+    Hard Rock"), while the Genre column holds broad umbrella categories
+    (Alternative, Metal, Hip Hop...) -- so a campaign's genre/subgenre
+    terms can legitimately show up in either sheet column. Now checks
+    both campaign terms (genre, subgenre) against both sheet fields
+    (Genre, Subgenre) -- any hit makes the row eligible.
+
+    "genre" and "subgenre" in the campaign JSON can each be a single
+    string OR a list of strings (see _as_list()) -- e.g.
+    "subgenre": ["Lyrical Hip Hop", "Trap Metal", "Hip Hop"] to match on
+    any of several possible tags. A row is eligible if ANY campaign
+    genre/subgenre term is found in ANY sheet Genre/Subgenre field.
     """
     genre_field = row.get("Genre", "")
     subgenre_field = row.get("Subgenre", "")
@@ -175,14 +246,12 @@ def check_blog_eligibility(row, campaign):
     notable_artists = row.get("Notable Artists Covered", "")
 
     similar_artists_reference = campaign.get("similar_artists_reference", {})
+    campaign_terms = _as_list(campaign["genre"]) + _as_list(campaign["subgenre"])
 
-    genre_hit = _contains(genre_field, campaign["genre"])
+    genre_field_hit = _any_contains(genre_field, campaign_terms)
+    subgenre_field_hit = _any_contains(subgenre_field, campaign_terms)
 
-    subgenre_hit = False
-    if not genre_hit:
-        subgenre_hit = _contains(subgenre_field, campaign["subgenre"])
-
-    if not genre_hit and not subgenre_hit:
+    if not genre_field_hit and not subgenre_field_hit:
         return {"eligible": False, "reason": "no genre/subgenre match", "matched_artists": []}
 
     if _status_means_already_contacted(outreach_status):
@@ -196,7 +265,7 @@ def check_blog_eligibility(row, campaign):
         if _contains(notable_artists, name)
     ]
 
-    matched_via = "genre" if genre_hit else "subgenre"
+    matched_via = "genre column" if genre_field_hit else "subgenre column"
     return {"eligible": True, "reason": f"matched via {matched_via}", "matched_artists": matched_artists}
 
 
@@ -250,7 +319,12 @@ def fill_template(template, row, campaign, matched_artists):
     """
     similar_artists_reference = campaign.get("similar_artists_reference", {})
 
-    subgenre_suffix = f" with a {campaign['subgenre']} edge" if campaign.get("subgenre") else ""
+    # "genre" and "subgenre" may each be a single string or a list of
+    # strings (see _as_list()) -- always join to plain text here so the
+    # filled email never shows a raw Python list.
+    genre_display = "/".join(_as_list(campaign.get("genre")))
+    subgenre_list = _as_list(campaign.get("subgenre"))
+    subgenre_suffix = f" with a {'/'.join(subgenre_list)} edge" if subgenre_list else ""
 
     similar_artists_list = ""
     fallback_artists_list = ""
@@ -281,8 +355,8 @@ def fill_template(template, row, campaign, matched_artists):
     replacements = {
         "{{TITLE}}": campaign.get("title", ""),
         "{{ARTIST}}": campaign.get("artist", ""),
-        "{{BLOG_NAME}}": row.get("Blog/Publication Name", "there"),
-        "{{GENRE}}": campaign.get("genre", ""),
+        "{{BLOG_NAME}}": row.get("Blogs", "there"),
+        "{{GENRE}}": genre_display,
         "{{SUBGENRE_SUFFIX}}": subgenre_suffix,
         "{{MOOD}}": campaign.get("mood", ""),
         "{{SONG_LINK}}": campaign.get("link", ""),
@@ -302,13 +376,13 @@ def run(config_path=None):
 
     template = load_master_template()
     sheet = get_sheet()
-    blogs = load_rows(sheet, "Blogs")
+    blogs = load_rows(sheet, "Publications")
 
     results = []
     skipped_count = 0
 
     for row in blogs:
-        target_name = row.get("Blog/Publication Name", "Unknown")
+        target_name = row.get("Blogs", "Unknown")
         check = check_blog_eligibility(row, campaign)
 
         if not check["eligible"]:
