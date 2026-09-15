@@ -73,22 +73,14 @@
     "Freddie Gibbs": {
       "angle": "lean into the gritty, technical lyricism angle -- dense, unflinching verses that carry weight without needing to shout. Covered by BBarak's underground hip-hop coverage",
       "tags": ["Lyrical Hip Hop"]
-    }
-  },
-
-  "_NOTE_suggested_new_artists": "The block below (suggested_new_artists) is NOT read by draft_pitches.py -- it's parked here on purpose so nothing unverified goes out in a real batch. These are the leftover candidates that did NOT turn up anywhere in the real Publications sheet (pure genre-knowledge guesses on Claude's part), plus one borderline sheet-corroborated pick that's more legacy-lyrical than aggressive. Review each one, then cut-paste any you like into similar_artists_reference above (same {angle, tags} shape) and delete this whole block whenever you're done with it.",
-  "suggested_new_artists": {
+    },
     "clipping.": {
-      "angle": "experimental, noise-rap aggressive angle -- industrial-leaning production with dense, technical verses. No hit anywhere in the real Publications sheet -- pure genre-knowledge guess",
+      "angle": "lean into the experimental, industrial-noise aggressive angle -- dense, technical verses over harsh, unconventional production, a colder cousin to the trap-metal lineage",
       "tags": ["Alternative Hip Hop", "Lyrical Hip Hop"]
     },
     "Backxwash": {
-      "angle": "industrial/horrorcore aggressive angle -- dark, heavy production with intense delivery. No hit anywhere in the real Publications sheet -- pure genre-knowledge guess",
+      "angle": "lean into the industrial/horrorcore aggressive angle -- dark, heavy production paired with an unflinching, intense delivery",
       "tags": ["Trap Metal", "Alternative Hip Hop"]
-    },
-    "Clipse": {
-      "angle": "dense, technical coke-rap lyricism -- more legacy/mainstream and less aggressive-underground than the rest of this roster, so use with judgment. Covered by Consequence in the same broad cross-genre list as Rico Nasty",
-      "tags": ["Lyrical Hip Hop"]
     }
   }
 }
